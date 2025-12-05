@@ -16,6 +16,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   Form,
   FormControl,
@@ -27,6 +28,7 @@ import {
 } from "@/components/ui/form";
 import { Plus, Trash2, Upload, X, ChevronDown, ChevronRight } from "lucide-react";
 import { useState } from "react";
+import React from "react";
 import { DOCUMENT_TYPES } from "@/lib/constants/documentTypes";
 import { Textarea } from "@/components/ui/textarea";
 
@@ -125,6 +127,7 @@ export default function InputPage() {
   });
 
   const deploymentMode = form.watch("cluster.deploymentMode");
+  const throughputInputRefs = React.useRef<(HTMLInputElement | null)[]>([]);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
@@ -231,6 +234,17 @@ export default function InputPage() {
       return;
     }
     
+    // 부하테스트 결과 업로드 또는 개발자가 제공한 문서 사용 체크 여부 확인
+    const hasBenchmarkFiles = benchmarkFiles.length > 0;
+    const hasBenchmarkTexts = benchmarkTexts.some((t) => t && t.trim());
+    const hasBenchmarkAnalysisResults = benchmarkAnalysisResults.length > 0;
+    const hasBenchmarkData = hasBenchmarkFiles || hasBenchmarkTexts || hasBenchmarkAnalysisResults || usePredefinedBenchmark;
+    
+    if (!hasBenchmarkData) {
+      alert("부하테스트 결과를 업로드하거나 '개발자가 제공한 문서 사용'을 체크해주세요.");
+      return;
+    }
+    
     // 부하테스트 분석이 진행 중이면 계산하지 않음
     if (isAnalyzingBenchmark) {
       alert("부하테스트 결과 분석이 진행 중입니다. 완료될 때까지 기다려주세요.");
@@ -239,6 +253,20 @@ export default function InputPage() {
     
     setIsSubmitting(true);
     try {
+      // OCR 전체 요청량이 없으면 OCR 요구사항의 분당 처리량을 합산해서 사용
+      let finalData = { ...data };
+      if (!finalData.totalRequestThroughput || finalData.totalRequestThroughput === 0) {
+        if (finalData.ocr && finalData.ocr.length > 0) {
+          const sumOfRequiredThroughput = finalData.ocr.reduce(
+            (sum, ocrItem) => sum + (ocrItem.requiredThroughput || 0),
+            0
+          );
+          if (sumOfRequiredThroughput > 0) {
+            finalData.totalRequestThroughput = sumOfRequiredThroughput;
+          }
+        }
+      }
+      
       // 분석된 결과가 있으면 그것만 사용하고, 없을 때만 텍스트 전달
       const response = await fetch("/api/calculate", {
         method: "POST",
@@ -246,7 +274,7 @@ export default function InputPage() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          input: data,
+          input: finalData,
           // 이미 분석된 benchmarkData만 전달 (onSubmit에서는 분석하지 않음)
           benchmarkData: benchmarkAnalysisResults.length > 0 ? benchmarkAnalysisResults : null,
         }),
@@ -283,39 +311,6 @@ export default function InputPage() {
 
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-          {/* SECTION 0: Total Request Throughput */}
-          <Card className="border-2 shadow-lg hover:shadow-xl transition-shadow">
-            <CardHeader className="bg-gradient-to-r from-primary/5 to-primary/10 pb-4">
-              <CardTitle className="text-xl">전체 요청량</CardTitle>
-              <CardDescription className="text-base">
-                OCR과 문서분류기 계산에 사용되는 전체 요청량을 입력하세요.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <FormField
-                control={form.control}
-                name="totalRequestThroughput"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>전체 요청량 (문서/분)</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="number"
-                        {...field}
-                        onChange={(e) =>
-                          field.onChange(parseInt(e.target.value) || 0)
-                        }
-                      />
-                    </FormControl>
-                    <FormDescription>
-                      모든 문서 타입의 합계 요청량입니다. OCR과 문서분류기는 이 값으로 계산됩니다.
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </CardContent>
-          </Card>
 
           {/* SECTION 0.5: 부하테스트 결과 업로드 */}
           <Card className="border-2 shadow-lg hover:shadow-xl transition-shadow">
@@ -400,39 +395,7 @@ export default function InputPage() {
                 </Label>
               </div>
 
-              {usePredefinedBenchmark ? (
-                <div className="p-4 border-2 border-dashed border-primary/50 rounded-lg bg-primary/5">
-                  <div className="space-y-3">
-                    <div className="flex items-start gap-2">
-                      <div className="text-primary font-semibold text-base">📁 파일 위치 안내</div>
-                    </div>
-                    <div className="text-sm space-y-2">
-                      <p className="font-medium">부하테스트 결과 파일을 다음 위치에 저장하세요:</p>
-                      <div className="bg-background p-3 rounded border font-mono text-xs break-all">
-                        <code>public/benchmark-results/</code>
-                      </div>
-                      <div className="space-y-1 mt-3">
-                        <p className="font-medium">📸 이미지 파일:</p>
-                        <ul className="list-disc list-inside space-y-1 ml-2 text-muted-foreground">
-                          <li>PNG, JPG, JPEG 형식 지원</li>
-                          <li>파일명은 자유롭게 지정 가능 (LLM이 내용을 분석하여 자동 인식)</li>
-                        </ul>
-                        <p className="font-medium mt-3">📄 텍스트 파일:</p>
-                        <ul className="list-disc list-inside space-y-1 ml-2 text-muted-foreground">
-                          <li>TXT 형식 지원</li>
-                          <li>파일명은 자유롭게 지정 가능 (LLM이 내용을 분석하여 자동 인식)</li>
-                        </ul>
-                      </div>
-                      <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-950/20 rounded border border-blue-200 dark:border-blue-800">
-                        <p className="text-xs text-blue-900 dark:text-blue-100">
-                          <strong>💡 참고:</strong> 파일을 저장한 후 애플리케이션을 재시작하면 자동으로 로드됩니다.
-                          파일명에 특별한 규칙이 없어도 됩니다. LLM이 파일 내용을 분석하여 GPU 모델, 워크로드 타입, 성능 데이터 등을 자동으로 추출합니다.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ) : (
+              {usePredefinedBenchmark ? null : (
                 <>
               {/* 파일 업로드 */}
               <div>
@@ -637,65 +600,158 @@ export default function InputPage() {
             </CardContent>
           </Card>
 
-          {/* SECTION 1: OCR Workload Config */}
+          {/* SECTION 1: OCR 요구사항 */}
           <Card className="border-2 shadow-lg hover:shadow-xl transition-shadow">
             <CardHeader className="bg-gradient-to-r from-green-500/5 to-green-500/10 pb-4">
-              <CardTitle className="text-xl">OCR 워크로드 설정</CardTitle>
+              <CardTitle className="text-xl">OCR 요구사항</CardTitle>
               <CardDescription className="text-base">
                 여러 종류의 OCR 문서 워크로드를 추가할 수 있습니다.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {fields.map((field, index) => (
-                <Card key={field.id} className="p-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <FormField
-                      control={form.control}
-                      name={`ocr.${index}.documentType`}
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>문서 타입</FormLabel>
-                          <Select
-                            onValueChange={field.onChange}
-                            defaultValue={field.value}
-                          >
-                            <FormControl>
-                              <SelectTrigger>
-                                <SelectValue placeholder="문서 타입 선택" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              {DOCUMENT_TYPES.map((type) => (
-                                <SelectItem key={type} value={type}>
-                                  {type}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
+              {/* 전체 요청량 */}
+              <FormField
+                control={form.control}
+                name="totalRequestThroughput"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>전체 요청량 (페이지/분)</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="text"
+                        inputMode="numeric"
+                        {...field}
+                        value={field.value && field.value > 0 ? String(field.value) : ""}
+                        onFocus={(e) => {
+                          e.target.select();
+                        }}
+                        onChange={(e) => {
+                          let value = e.target.value;
+                          // 숫자가 아닌 문자 제거
+                          value = value.replace(/[^0-9]/g, "");
+                          // 앞의 0 제거 (예: 0234 -> 234)
+                          if (value.length > 1) {
+                            value = value.replace(/^0+/, "") || "0";
+                          }
+                          if (value === "") {
+                            field.onChange(0);
+                          } else {
+                            const numValue = parseInt(value, 10);
+                            field.onChange(numValue);
+                          }
+                        }}
+                        onBlur={(e) => {
+                          if (e.target.value === "") {
+                            field.onChange(0);
+                          }
+                        }}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      모든 문서 타입의 합계 요청량입니다. OCR과 문서분류기는 이 값으로 계산됩니다.
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              {fields.map((field, index) => {
+                const usedDocumentTypes = fields.map((f, idx) => 
+                  idx !== index ? form.watch(`ocr.${idx}.documentType`) : null
+                ).filter(Boolean);
 
-                    <FormField
-                      control={form.control}
-                      name={`ocr.${index}.requiredThroughput`}
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>필요 처리량 (문서/분)</FormLabel>
-                          <FormControl>
-                            <Input
-                              type="number"
-                              {...field}
-                              onChange={(e) =>
-                                field.onChange(parseInt(e.target.value) || 0)
-                              }
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
+                return (
+                  <Card key={field.id} className="p-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <FormField
+                        control={form.control}
+                        name={`ocr.${index}.documentType`}
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>문서 타입</FormLabel>
+                            <FormControl>
+                              <RadioGroup
+                                value={field.value}
+                                onValueChange={(value) => {
+                                  field.onChange(value);
+                                  // 문서 타입 선택 시 필요 처리량 인풋에 커서 이동
+                                  setTimeout(() => {
+                                    throughputInputRefs.current[index]?.focus();
+                                  }, 100);
+                                }}
+                                className="flex flex-wrap gap-4"
+                              >
+                                {DOCUMENT_TYPES.map((type) => {
+                                  const isUsed = usedDocumentTypes.includes(type);
+                                  return (
+                                    <div key={type} className="flex items-center space-x-2">
+                                      <RadioGroupItem
+                                        value={type}
+                                        id={`${field.name}-${type}`}
+                                        disabled={isUsed}
+                                        className={isUsed ? "opacity-50 cursor-not-allowed" : ""}
+                                      />
+                                      <Label
+                                        htmlFor={`${field.name}-${type}`}
+                                        className={`text-sm font-normal cursor-pointer ${
+                                          isUsed ? "opacity-50 cursor-not-allowed" : ""
+                                        }`}
+                                      >
+                                        {type}
+                                      </Label>
+                                    </div>
+                                  );
+                                })}
+                              </RadioGroup>
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name={`ocr.${index}.requiredThroughput`}
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>필요 처리량 (페이지/분)</FormLabel>
+                            <FormControl>
+                              <Input
+                                ref={(el) => {
+                                  throughputInputRefs.current[index] = el;
+                                }}
+                                type="text"
+                                inputMode="numeric"
+                                {...field}
+                                value={field.value && field.value > 0 ? String(field.value) : ""}
+                                onFocus={(e) => {
+                                  e.target.select();
+                                }}
+                                onChange={(e) => {
+                                  let value = e.target.value;
+                                  // 숫자가 아닌 문자 제거
+                                  value = value.replace(/[^0-9]/g, "");
+                                  // 앞의 0 제거 (예: 0234 -> 234)
+                                  if (value.length > 1) {
+                                    value = value.replace(/^0+/, "") || "0";
+                                  }
+                                  if (value === "") {
+                                    field.onChange(0);
+                                  } else {
+                                    const numValue = parseInt(value, 10);
+                                    field.onChange(numValue);
+                                  }
+                                }}
+                                onBlur={(e) => {
+                                  if (e.target.value === "") {
+                                    field.onChange(0);
+                                  }
+                                }}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
 
                     <FormField
                       control={form.control}
@@ -708,11 +764,23 @@ export default function InputPage() {
                               type="number"
                               step="0.1"
                               {...field}
+                              value={field.value ?? ""}
                               disabled
                               className="bg-muted cursor-not-allowed"
-                              onChange={(e) =>
-                                field.onChange(parseFloat(e.target.value) || 0)
-                              }
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                if (value === "") {
+                                  field.onChange(0);
+                                } else {
+                                  const numValue = parseFloat(value.replace(/^0+/, "") || "0");
+                                  field.onChange(numValue);
+                                }
+                              }}
+                              onBlur={(e) => {
+                                if (e.target.value === "") {
+                                  field.onChange(0);
+                                }
+                              }}
                             />
                           </FormControl>
                           <FormDescription className="text-muted-foreground">
@@ -747,20 +815,21 @@ export default function InputPage() {
                     />
                   </div>
 
-                  {fields.length > 1 && (
-                    <Button
-                      type="button"
-                      variant="destructive"
-                      size="sm"
-                      className="mt-4"
-                      onClick={() => remove(index)}
-                    >
-                      <Trash2 className="h-4 w-4 mr-2" />
-                      제거
-                    </Button>
-                  )}
-                </Card>
-              ))}
+                    {fields.length > 1 && (
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        size="sm"
+                        className="mt-4"
+                        onClick={() => remove(index)}
+                      >
+                        <Trash2 className="h-4 w-4 mr-2" />
+                        제거
+                      </Button>
+                    )}
+                  </Card>
+                );
+              })}
 
               <Button
                 type="button"
@@ -794,14 +863,36 @@ export default function InputPage() {
                 name="dp.requiredThroughput"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>필요 DP 처리량 (문서/분)</FormLabel>
+                    <FormLabel>필요 DP 처리량 (페이지/분)</FormLabel>
                     <FormControl>
                       <Input
-                        type="number"
+                        type="text"
+                        inputMode="numeric"
                         {...field}
-                        onChange={(e) =>
-                          field.onChange(parseInt(e.target.value) || 0)
-                        }
+                        value={field.value && field.value > 0 ? String(field.value) : ""}
+                        onFocus={(e) => {
+                          e.target.select();
+                        }}
+                        onChange={(e) => {
+                          let value = e.target.value;
+                          // 숫자가 아닌 문자 제거
+                          value = value.replace(/[^0-9]/g, "");
+                          // 앞의 0 제거 (예: 0234 -> 234)
+                          if (value.length > 1) {
+                            value = value.replace(/^0+/, "") || "0";
+                          }
+                          if (value === "") {
+                            field.onChange(0);
+                          } else {
+                            const numValue = parseInt(value, 10);
+                            field.onChange(numValue);
+                          }
+                        }}
+                        onBlur={(e) => {
+                          if (e.target.value === "") {
+                            field.onChange(0);
+                          }
+                        }}
                       />
                     </FormControl>
                     <FormMessage />
@@ -820,11 +911,23 @@ export default function InputPage() {
                         type="number"
                         step="0.1"
                         {...field}
+                        value={field.value ?? ""}
                         disabled
                         className="bg-muted cursor-not-allowed"
-                        onChange={(e) =>
-                          field.onChange(parseFloat(e.target.value) || 0)
-                        }
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          if (value === "") {
+                            field.onChange(0);
+                          } else {
+                            const numValue = parseFloat(value.replace(/^0+/, "") || "0");
+                            field.onChange(numValue);
+                          }
+                        }}
+                        onBlur={(e) => {
+                          if (e.target.value === "") {
+                            field.onChange(0);
+                          }
+                        }}
                       />
                     </FormControl>
                     <FormDescription className="text-muted-foreground">
@@ -837,10 +940,10 @@ export default function InputPage() {
             </CardContent>
           </Card>
 
-          {/* SECTION 3: LLM Concurrency */}
+          {/* SECTION 3: LLM 요구사항 */}
           <Card className="border-2 shadow-lg hover:shadow-xl transition-shadow opacity-60">
             <CardHeader className="bg-gradient-to-r from-orange-500/5 to-orange-500/10 pb-4">
-              <CardTitle className="text-xl">LLM 동시성 <span className="text-muted-foreground text-sm font-normal">(현재 지원하지 않음)</span></CardTitle>
+              <CardTitle className="text-xl">LLM 요구사항 <span className="text-muted-foreground text-sm font-normal">(현재 지원하지 않음)</span></CardTitle>
               <CardDescription className="text-base">
                 현재 버전에서는 지원하지 않는 기능입니다.
               </CardDescription>
@@ -856,11 +959,23 @@ export default function InputPage() {
                       <Input
                         type="number"
                         {...field}
+                        value={field.value ?? ""}
                         disabled
                         className="bg-muted cursor-not-allowed"
-                        onChange={(e) =>
-                          field.onChange(parseInt(e.target.value) || 0)
-                        }
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          if (value === "") {
+                            field.onChange(0);
+                          } else {
+                            const numValue = parseInt(value.replace(/^0+/, "") || "0", 10);
+                            field.onChange(numValue);
+                          }
+                        }}
+                        onBlur={(e) => {
+                          if (e.target.value === "") {
+                            field.onChange(0);
+                          }
+                        }}
                       />
                     </FormControl>
                     <FormMessage />
@@ -1017,11 +1132,23 @@ export default function InputPage() {
                         min="1"
                         max="24"
                         {...field}
+                        value={field.value ?? ""}
                         disabled
                         className="bg-muted cursor-not-allowed"
-                        onChange={(e) =>
-                          field.onChange(parseInt(e.target.value) || 24)
-                        }
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          if (value === "") {
+                            field.onChange(24);
+                          } else {
+                            const numValue = parseInt(value.replace(/^0+/, "") || "24", 10);
+                            field.onChange(numValue);
+                          }
+                        }}
+                        onBlur={(e) => {
+                          if (e.target.value === "") {
+                            field.onChange(24);
+                          }
+                        }}
                       />
                     </FormControl>
                     <FormMessage />

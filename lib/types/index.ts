@@ -96,6 +96,9 @@ export interface ServerConfiguration {
     gpuCount: number;
     cpuCores: number;
     ramGB: number;
+    ssdGB: number; // RAID 1 적용 전 용량
+    ssdWithRAID1GB: number; // RAID 1 적용 후 용량
+    ssdDevices: Array<{ capacity: number; count: number }>; // 시중 판매 SSD 장비 구성 (GB 단위)
   }>;
 }
 
@@ -109,6 +112,9 @@ export interface CalculationResult {
     cores: number;
   };
   memoryRecommendation: {
+    sizeGB: number;
+  };
+  ssdDiskRecommendation: {
     sizeGB: number;
   };
   serverConfiguration: ServerConfiguration;

@@ -10,6 +10,9 @@ export interface DocumentClassifierProfile {
   vramPerContainer: number; // 컨테이너당 필요한 VRAM (GB)
   cpuImpactPerContainer: number; // 컨테이너당 필요한 vCPU cores
   memoryImpactPerContainer: number; // 컨테이너당 필요한 RAM (GB)
+  // SSD 디스크 용량 계산: installationSize * 2 + modelWeightSize * 컨테이너수
+  installationSize: number; // 설치파일 크기 (GB) - 설치파일 + 컨테이너 레이어는 재사용됨
+  modelWeightSize: number; // 모델웨이트 크기 (GB) - 컨테이너당 필요
 }
 
 export const DOCUMENT_CLASSIFIER_PROFILES: DocumentClassifierProfile = {
@@ -18,5 +21,7 @@ export const DOCUMENT_CLASSIFIER_PROFILES: DocumentClassifierProfile = {
   vramPerContainer: 4, // 컨테이너당 4GB VRAM
   cpuImpactPerContainer: 4, // 4 vCPU cores per container
   memoryImpactPerContainer: 16, // 16 GB RAM per container
+  installationSize: 20, // 설치파일 20GB (설치파일 + 컨테이너 레이어는 재사용됨)
+  modelWeightSize: 5, // 모델웨이트 5GB (컨테이너당)
 };
 

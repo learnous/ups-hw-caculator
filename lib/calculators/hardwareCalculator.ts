@@ -836,6 +836,57 @@ function estimateMemory(input: CalculationInput, benchmarkData?: ParsedBenchmark
   return ocrMemory + infoExtractionMemory + docClassifierMemory + dpMemory + llmMemory + baseMemory;
 }
 
+/**
+ * SSD 디스크 용량 계산
+ * 공식: 설치파일 * 2 + 모델웨이트 * 컨테이너수
+ * 설치파일과 컨테이너 레이어는 재사용되므로 한 번만 계산하고, 모델웨이트는 컨테이너당 필요
+ */
+function estimateSSDDisk(input: CalculationInput, benchmarkData?: ParsedBenchmarkData[]): number {
+  const ocrBreakdown = estimateOCRGpu(input, benchmarkData);
+  const infoExtractionBreakdown = estimateInformationExtractionGpu(input, benchmarkData);
+  const docClassifierBreakdown = estimateDocumentClassifierGpu(input, benchmarkData);
+  const dpBreakdown = estimateDPGpu(input, benchmarkData);
+  const llmBreakdown = estimateLLMGpu(input);
+
+  // OCR: 설치파일 * 2 + 모델웨이트 * 컨테이너수
+  const ocrContainers = ocrBreakdown.details?.reduce((sum, detail) => sum + detail.containersNeeded, 0) || 0;
+  const ocrSSD = ocrContainers > 0 
+    ? OCR_PROFILES.installationSize * 2 + OCR_PROFILES.modelWeightSize * ocrContainers
+    : 0;
+
+  // 정보추출: 설치파일 * 2 + 모델웨이트 * 컨테이너수
+  const infoExtractionContainers = infoExtractionBreakdown.details?.reduce((sum, detail) => sum + detail.containersNeeded, 0) || 0;
+  const infoExtractionSSD = infoExtractionContainers > 0
+    ? INFORMATION_EXTRACTION_PROFILES.installationSize * 2 + INFORMATION_EXTRACTION_PROFILES.modelWeightSize * infoExtractionContainers
+    : 0;
+
+  // 문서분류기: 설치파일 * 2 + 모델웨이트 * 컨테이너수
+  const docClassifierContainers = docClassifierBreakdown.details?.reduce((sum, detail) => sum + detail.containersNeeded, 0) || 0;
+  const docClassifierSSD = docClassifierContainers > 0
+    ? DOCUMENT_CLASSIFIER_PROFILES.installationSize * 2 + DOCUMENT_CLASSIFIER_PROFILES.modelWeightSize * docClassifierContainers
+    : 0;
+
+  // DP: 설치파일 * 2 + 모델웨이트 * 컨테이너수
+  const dpContainers = dpBreakdown.details?.reduce((sum, detail) => sum + detail.containersNeeded, 0) || 0;
+  const dpSSD = dpContainers > 0
+    ? DP_PROFILES.default.installationSize * 2 + DP_PROFILES.default.modelWeightSize * dpContainers
+    : 0;
+
+  // LLM: 설치파일 * 2 + 모델웨이트 * 컨테이너수
+  // LLM은 별도 프로필이 없으므로 기본값 사용 (나중에 프로필 파일로 분리 가능)
+  const llmContainers = llmBreakdown.details?.reduce((sum, detail) => sum + detail.containersNeeded, 0) || 0;
+  const LLM_INSTALLATION_SIZE = 50; // LLM 설치파일 크기 (GB)
+  const LLM_MODEL_WEIGHT_SIZE = 30; // LLM 모델웨이트 크기 (GB) - 컨테이너당
+  const llmSSD = llmContainers > 0
+    ? LLM_INSTALLATION_SIZE * 2 + LLM_MODEL_WEIGHT_SIZE * llmContainers
+    : 0;
+
+  // Base SSD for system (OS, etc.)
+  const baseSSD = 50; // 기본 시스템 SSD 용량
+
+  return ocrSSD + infoExtractionSSD + docClassifierSSD + dpSSD + llmSSD + baseSSD;
+}
+
 function getMIGMemory(profile: string): number {
   // Default to H100 MIG profiles
   return GPU_DB.H100.migProfiles[profile] || 10;
@@ -1407,6 +1458,7 @@ export function calculateHardware(
 
   const cpuCores = estimateCpu(input, benchmarkData);
   const memoryGB = estimateMemory(input, benchmarkData);
+  const ssdDiskGB = estimateSSDDisk(input, benchmarkData);
 
   // Calculate comparisons for different GPU models
   const comparison = {
@@ -1422,7 +1474,8 @@ export function calculateHardware(
     gpuRecommendation.count,
     gpuRecommendation.model,
     cpuCores,
-    memoryGB
+    memoryGB,
+    ssdDiskGB
   );
 
   return {
@@ -1432,6 +1485,9 @@ export function calculateHardware(
     },
     memoryRecommendation: {
       sizeGB: memoryGB,
+    },
+    ssdDiskRecommendation: {
+      sizeGB: ssdDiskGB,
     },
     serverConfiguration,
     breakdown,
@@ -1478,16 +1534,80 @@ function roundUpToStandardCPU(cores: number): number {
 }
 
 /**
+ * SSD 디스크 용량을 표준값으로 올림합니다.
+ * 표준값: 128, 256, 512, 1024, 2048, 4096, 8192 GB 등
+ */
+function roundUpToStandardSSD(gb: number): number {
+  const standardValues = [128, 256, 512, 1024, 2048, 4096, 8192, 16384];
+  
+  for (const standard of standardValues) {
+    if (gb <= standard) {
+      return standard;
+    }
+  }
+  
+  // 표준값보다 크면 다음 2의 거듭제곱으로 올림
+  return Math.pow(2, Math.ceil(Math.log2(gb)));
+}
+
+/**
+ * 필요한 SSD 용량을 시중 판매되는 SSD 장비 구성으로 변환합니다.
+ * 시중 판매 용량: 256GB, 512GB, 1TB(1024GB), 2TB(2048GB), 4TB(4096GB), 8TB(8192GB) 등
+ * RAID 1 적용 시 필요한 용량을 최소 개수의 SSD로 구성합니다.
+ * RAID 1은 미러링이므로 각 용량당 최소 2개가 필요합니다.
+ * 
+ * 예: 1500GB 필요 시
+ * - 1TB SSD 2개 (1024GB 제공, RAID 1)
+ * - 512GB SSD 2개 (512GB 제공, RAID 1)
+ * 총 1536GB 제공
+ */
+function calculateSSDDevices(requiredGB: number): Array<{ capacity: number; count: number }> {
+  const availableCapacities = [256, 512, 1024, 2048, 4096, 8192, 16384]; // GB 단위
+  const devices: Array<{ capacity: number; count: number }> = [];
+  let remaining = requiredGB;
+  
+  // 큰 용량부터 시도
+  for (let i = availableCapacities.length - 1; i >= 0; i--) {
+    const capacity = availableCapacities[i];
+    if (remaining >= capacity) {
+      // 이 용량으로 몇 개의 RAID 1 세트가 필요한지 계산
+      const setsNeeded = Math.ceil(remaining / capacity);
+      const count = setsNeeded * 2; // RAID 1이므로 각 세트당 2개
+      devices.push({ capacity, count });
+      remaining -= capacity * setsNeeded; // 실제 제공되는 용량
+      
+      // 정확히 맞거나 남은 용량이 없으면 종료
+      if (remaining <= 0) {
+        break;
+      }
+    }
+  }
+  
+  // 남은 용량이 있으면 가장 작은 용량으로 처리
+  if (remaining > 0) {
+    const smallestCapacity = availableCapacities[0];
+    const setsNeeded = Math.ceil(remaining / smallestCapacity);
+    const count = setsNeeded * 2; // RAID 1이므로 각 세트당 2개
+    devices.push({ capacity: smallestCapacity, count });
+  }
+  
+  // 용량 순으로 정렬 (큰 것부터)
+  return devices.sort((a, b) => b.capacity - a.capacity);
+}
+
+/**
  * 서버 구성을 계산합니다.
  * GPU 수를 기반으로 서버 대수를 결정하고, 각 서버의 스펙을 계산합니다.
  * RAM은 필요 RAM의 2배 이상으로 설정하고, 표준값으로 올림합니다.
  * CPU 코어도 표준값으로 올림합니다.
+ * SSD는 전체 필요 SSD 용량의 3배를 서버 대수로 나눈 후 표준값으로 올림합니다.
  */
 export function calculateServerConfiguration(
   totalGpuCount: number,
   gpuModel: string,
   totalCpuCores: number,
-  requiredRamGB: number
+  requiredRamGB: number,
+  requiredSSDGB: number
 ): import("@/lib/types").ServerConfiguration {
   // 서버 대수 결정: GPU 4개당 1대 (최소 1대)
   // 예: GPU 1-4개 → 1대, 5-8개 → 2대, 9-12개 → 3대
@@ -1504,6 +1624,18 @@ export function calculateServerConfiguration(
   const ramPerServerRaw = (requiredRamGB * 2) / totalServers;
   const ramPerServer = roundUpToStandardRAM(ramPerServerRaw);
   
+  // 각 서버당 SSD 계산: (필요 SSD * 3) / 서버 수 + 리눅스 OS 영역(100GB)
+  const LINUX_OS_SIZE_GB = 100; // 리눅스 OS 영역 용량
+  const ssdPerServerRaw = (requiredSSDGB * 3) / totalServers + LINUX_OS_SIZE_GB;
+  const ssdPerServer = roundUpToStandardSSD(ssdPerServerRaw);
+  
+  // RAID 1 적용 시 필요한 용량 (2배) - 표시용
+  const ssdWithRAID1GB = ssdPerServer * 2;
+  
+  // 시중 판매 SSD 장비 구성 계산 (RAID 1로 ssdPerServer 용량을 구성하기 위한 장비)
+  // 예: 1024GB 필요 시 → 1TB SSD 2개 (RAID 1)
+  const ssdDevices = calculateSSDDevices(ssdPerServer);
+  
   // 서버 구성 배열 생성
   const servers = Array.from({ length: totalServers }, (_, index) => ({
     serverNumber: index + 1,
@@ -1513,6 +1645,9 @@ export function calculateServerConfiguration(
       : gpusPerServer,
     cpuCores: cpuCoresPerServer,
     ramGB: ramPerServer,
+    ssdGB: ssdPerServer,
+    ssdWithRAID1GB,
+    ssdDevices,
   }));
 
   return {
@@ -1779,11 +1914,14 @@ export function recalculateForBaseGPU(
   }
   
   // 서버 구성 재계산
+  // SSD는 원본 결과에서 가져오거나 재계산 (기준 GPU 변경 시 SSD는 변하지 않음)
+  const ssdDiskGB = baseResult.ssdDiskRecommendation?.sizeGB || 0;
   const newServerConfiguration = calculateServerConfiguration(
     newGpuCount,
     newBaseGPU,
     cpuRecommendation.cores,
-    memoryRecommendation.sizeGB
+    memoryRecommendation.sizeGB,
+    ssdDiskGB
   );
   
   // Comparison은 항상 L40S 기준 breakdown으로 계산 (기준 GPU 변경과 무관)
@@ -1807,6 +1945,7 @@ export function recalculateForBaseGPU(
     },
     cpuRecommendation,
     memoryRecommendation,
+    ssdDiskRecommendation: baseResult.ssdDiskRecommendation || { sizeGB: 0 }, // SSD는 원본 결과에서 가져옴
     serverConfiguration: newServerConfiguration,
     breakdown: newBreakdown, // 재계산된 breakdown 사용
     comparison: newComparison,

@@ -4,6 +4,9 @@ export interface DPProfile {
   cpuImpactPerContainer: number; // 컨테이너당 필요한 vCPU cores
   memoryImpactPerContainer: number; // 컨테이너당 필요한 RAM (GB)
   vramPerContainer: number; // 컨테이너당 필요한 VRAM (GB)
+  // SSD 디스크 용량 계산: installationSize * 2 + modelWeightSize * 컨테이너수
+  installationSize: number; // 설치파일 크기 (GB) - 설치파일 + 컨테이너 레이어는 재사용됨
+  modelWeightSize: number; // 모델웨이트 크기 (GB) - 컨테이너당 필요
 }
 
 /**
@@ -22,6 +25,8 @@ export const DP_PROFILES: Record<string, DPProfile> = {
     cpuImpactPerContainer: 6, // 6 vCPU cores per DP container
     memoryImpactPerContainer: 32, // 32 GB RAM per DP container
     vramPerContainer: 12, // DP 컨테이너당 12GB VRAM 필요
+    installationSize: 30, // 설치파일 30GB (설치파일 + 컨테이너 레이어는 재사용됨)
+    modelWeightSize: 10, // 모델웨이트 10GB (컨테이너당)
   },
   // MIG 프로필 (H100 MIG 기준)
   mig: {
@@ -30,6 +35,8 @@ export const DP_PROFILES: Record<string, DPProfile> = {
     cpuImpactPerContainer: 6, // 6 vCPU cores per DP container
     memoryImpactPerContainer: 32, // 32 GB RAM per DP container
     vramPerContainer: 12, // DP 컨테이너당 12GB VRAM 필요
+    installationSize: 30, // 설치파일 30GB (설치파일 + 컨테이너 레이어는 재사용됨)
+    modelWeightSize: 10, // 모델웨이트 10GB (컨테이너당)
   },
 };
 

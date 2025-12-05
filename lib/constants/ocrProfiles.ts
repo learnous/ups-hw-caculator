@@ -11,6 +11,9 @@ export interface OCRProfile {
   memoryImpactPerContainer: number; // 컨테이너당 필요한 RAM (GB)
   pLLMVramPerInstance: number; // GB VRAM needed per pLLM instance
   pLLMThroughputPerInstance: number; // docs per minute per pLLM instance
+  // SSD 디스크 용량 계산: installationSize * 2 + modelWeightSize * 컨테이너수
+  installationSize: number; // 설치파일 크기 (GB) - 설치파일 + 컨테이너 레이어는 재사용됨
+  modelWeightSize: number; // 모델웨이트 크기 (GB) - 컨테이너당 필요
 }
 
 export const OCR_PROFILES: OCRProfile = {
@@ -20,5 +23,7 @@ export const OCR_PROFILES: OCRProfile = {
   memoryImpactPerContainer: 16, // 16 GB RAM per OCR container
   pLLMVramPerInstance: 40, // pLLM requires ~40GB VRAM per container
   pLLMThroughputPerInstance: 40, // pLLM processes ~40 docs/min per instance
+  installationSize: 20, // 설치파일 20GB (설치파일 + 컨테이너 레이어는 재사용됨)
+  modelWeightSize: 10, // 모델웨이트 10GB (컨테이너당)
 };
 

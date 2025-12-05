@@ -159,7 +159,7 @@ export default function ResultPage() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         <Card>
           <CardHeader>
             <CardTitle className="text-lg">기준 GPU</CardTitle>
@@ -230,6 +230,19 @@ export default function ResultPage() {
 
         <Card>
           <CardHeader>
+            <CardTitle className="text-lg">필요 SSD 디스크</CardTitle>
+            <CardDescription>SSD 디스크 용량 요구사항</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold">
+              {result.ssdDiskRecommendation.sizeGB}
+            </div>
+            <div className="text-muted-foreground mt-2">GB</div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
             <CardTitle className="text-lg">배포 모드</CardTitle>
             <CardDescription>권장 배포 방식</CardDescription>
           </CardHeader>
@@ -289,6 +302,19 @@ export default function ResultPage() {
                       <div className="text-sm text-muted-foreground">RAM</div>
                       <div className="text-xl font-semibold">{server.ramGB}GB</div>
                     </div>
+                    <div>
+                      <div className="text-sm text-muted-foreground">SSD DISK (RAID 1 적용 시)</div>
+                      <div className="text-xl font-semibold">{server.ssdWithRAID1GB.toLocaleString()}GB</div>
+                      <div className="text-xs text-muted-foreground mt-1">
+                        {server.ssdDevices.map((device, idx) => (
+                          <div key={idx}>
+                            {device.capacity >= 1024 
+                              ? `${device.capacity / 1024}TB SSD ${device.count}개`
+                              : `${device.capacity}GB SSD ${device.count}개`}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   </CardContent>
                 </Card>
               ))}
@@ -299,6 +325,7 @@ export default function ResultPage() {
                 <div>• GPU: {result.gpuRecommendation.model} × {result.gpuRecommendation.count}개</div>
                 <div>• CPU: {result.cpuRecommendation.cores}코어</div>
                 <div>• RAM: {result.memoryRecommendation.sizeGB}GB (필요량: {result.memoryRecommendation.sizeGB}GB, 실제 구성: {result.serverConfiguration.servers[0]?.ramGB || 0}GB × {result.serverConfiguration.totalServers}대 = {result.serverConfiguration.servers.reduce((sum, s) => sum + s.ramGB, 0)}GB)</div>
+                <div>• SSD DISK: {result.ssdDiskRecommendation.sizeGB}GB (필요량: {result.ssdDiskRecommendation.sizeGB}GB, RAID 1 적용 시: {result.serverConfiguration.servers[0]?.ssdWithRAID1GB || 0}GB × {result.serverConfiguration.totalServers}대 = {result.serverConfiguration.servers.reduce((sum, s) => sum + s.ssdWithRAID1GB, 0)}GB)</div>
               </div>
             </div>
           </CardContent>
@@ -367,8 +394,8 @@ export default function ResultPage() {
                       <table className="w-full text-sm">
                         <thead>
                           <tr className="border-b">
-                            <th className="text-left p-2">요구 처리량<br/>(분당)</th>
-                            <th className="text-left p-2">컨테이너당<br/>스루풋</th>
+                            <th className="text-left p-2">요구 처리량<br/>(페이지/분)</th>
+                            <th className="text-left p-2">컨테이너당<br/>스루풋 (페이지/분)</th>
                             <th className="text-left p-2">필요<br/>컨테이너 수</th>
                             <th className="text-left p-2">컨테이너당<br/>VRAM (GB)</th>
                             <th className="text-left p-2">총 VRAM (GB)</th>
@@ -437,8 +464,8 @@ export default function ResultPage() {
                         <thead>
                           <tr className="border-b">
                             <th className="text-left p-2">문서 타입</th>
-                            <th className="text-left p-2">요구 처리량<br/>(분당)</th>
-                            <th className="text-left p-2">컨테이너당<br/>스루풋</th>
+                            <th className="text-left p-2">요구 처리량<br/>(페이지/분)</th>
+                            <th className="text-left p-2">컨테이너당<br/>스루풋 (페이지/분)</th>
                             <th className="text-left p-2">필요<br/>컨테이너 수</th>
                             <th className="text-left p-2">컨테이너당<br/>VRAM (GB)</th>
                             <th className="text-left p-2">총 VRAM (GB)</th>
@@ -507,8 +534,8 @@ export default function ResultPage() {
                       <table className="w-full text-sm">
                         <thead>
                           <tr className="border-b">
-                            <th className="text-left p-2">요구 처리량<br/>(분당)</th>
-                            <th className="text-left p-2">컨테이너당<br/>스루풋</th>
+                            <th className="text-left p-2">요구 처리량<br/>(페이지/분)</th>
+                            <th className="text-left p-2">컨테이너당<br/>스루풋 (페이지/분)</th>
                             <th className="text-left p-2">필요<br/>컨테이너 수</th>
                             <th className="text-left p-2">컨테이너당<br/>VRAM (GB)</th>
                             <th className="text-left p-2">총 VRAM (GB)</th>
@@ -576,8 +603,8 @@ export default function ResultPage() {
                       <table className="w-full text-sm">
                         <thead>
                           <tr className="border-b">
-                            <th className="text-left p-2">요구 처리량<br/>(분당)</th>
-                            <th className="text-left p-2">컨테이너당<br/>스루풋</th>
+                            <th className="text-left p-2">요구 처리량<br/>(페이지/분)</th>
+                            <th className="text-left p-2">컨테이너당<br/>스루풋 (페이지/분)</th>
                             <th className="text-left p-2">필요<br/>컨테이너 수</th>
                             <th className="text-left p-2">컨테이너당<br/>VRAM (GB)</th>
                             <th className="text-left p-2">총 VRAM (GB)</th>
@@ -844,7 +871,7 @@ export default function ResultPage() {
             className="w-full justify-between p-0 h-auto"
             onClick={() => setShowTechnicalDetails(!showTechnicalDetails)}
           >
-            <CardTitle>기술적 설명</CardTitle>
+            <CardTitle>세부사항</CardTitle>
             {showTechnicalDetails ? (
               <ChevronUp className="h-4 w-4" />
             ) : (
@@ -906,7 +933,7 @@ export default function ResultPage() {
                       OCR 워크로드는 MIG 프로필 또는 전체 GPU 모드를 기반으로 계산됩니다.
                     </li>
                     <li>
-                      pLLM이 활성화된 경우, 컨테이너당 약 40GB VRAM이 필요하며 인스턴스당 약 40문서/분을 처리합니다.
+                      pLLM이 활성화된 경우, 컨테이너당 약 40GB VRAM이 필요하며 인스턴스당 약 40페이지/분을 처리합니다.
                     </li>
                     <li>
                       DP 워크로드는 벤치마크 데이터를 기반으로 계산됩니다.
