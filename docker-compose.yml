@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  hw-generator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: hw-generator
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - UPSTAGE_API_KEY=${UPSTAGE_API_KEY}
+      - UPSTAGE_API_URL=${UPSTAGE_API_URL:-https://api.upstage.ai/v1/document-digitization}
+      - UPSTAGE_LLM_API_URL=${UPSTAGE_LLM_API_URL:-https://api.upstage.ai/v1/chat/completions}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
