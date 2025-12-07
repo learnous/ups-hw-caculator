@@ -721,7 +721,10 @@ export default function InputPage() {
                                 }}
                                 type="text"
                                 inputMode="numeric"
-                                {...field}
+                                {...(() => {
+                                  const { ref, ...rest } = field;
+                                  return rest;
+                                })()}
                                 value={field.value && field.value > 0 ? String(field.value) : ""}
                                 onFocus={(e) => {
                                   e.target.select();
