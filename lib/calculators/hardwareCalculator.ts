@@ -1624,9 +1624,11 @@ export function calculateServerConfiguration(
   const ramPerServerRaw = (requiredRamGB * 2) / totalServers;
   const ramPerServer = roundUpToStandardRAM(ramPerServerRaw);
   
-  // 각 서버당 SSD 계산: (필요 SSD * 3) / 서버 수 + 리눅스 OS 영역(100GB)
-  const LINUX_OS_SIZE_GB = 100; // 리눅스 OS 영역 용량
-  const ssdPerServerRaw = (requiredSSDGB * 3) / totalServers + LINUX_OS_SIZE_GB;
+  // 각 서버당 SSD 계산: (필요 SSD * 3 + 리눅스 OS 영역) / 서버 수를 계산한 후 표준값으로 올림
+  // RAM 계산 방식과 동일하게: 전체 필요량을 계산한 후 서버 수로 나누고 표준값으로 올림
+  const LINUX_OS_SIZE_GB = 100; // 리눅스 OS 영역 용량 (서버당)
+  const totalSSDNeeded = (requiredSSDGB * 3) + (LINUX_OS_SIZE_GB * totalServers); // 전체 필요량 (OS는 서버당)
+  const ssdPerServerRaw = totalSSDNeeded / totalServers;
   const ssdPerServer = roundUpToStandardSSD(ssdPerServerRaw);
   
   // RAID 1 적용 시 필요한 용량 (2배) - 표시용
