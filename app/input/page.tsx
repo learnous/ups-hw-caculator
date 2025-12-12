@@ -31,6 +31,7 @@ import { useState } from "react";
 import React from "react";
 import { DOCUMENT_TYPES } from "@/lib/constants/documentTypes";
 import { Textarea } from "@/components/ui/textarea";
+import { normalizeDocumentType, matchDocumentType } from "@/lib/utils/stringMatcher";
 
 const formSchema = z.object({
   totalRequestThroughput: z.number().min(0, "전체 요청량은 0 이상이어야 합니다").optional(),
@@ -135,11 +136,16 @@ export default function InputPage() {
       return null; // 부하테스트 결과가 없으면 모든 문서 타입 허용
     }
     
+    // 부하테스트 결과의 documentType을 Set에 저장 (원본과 정규화된 버전 모두)
     const documentTypes = new Set<string>();
     benchmarkAnalysisResults.forEach((result: any) => {
       // InformationExtraction 워크로드의 documentType만 추출
       if (result.workloadType === "InformationExtraction" && result.documentType) {
+        // 원본 documentType 저장
         documentTypes.add(result.documentType);
+        // 정규화된 문서 타입도 저장 (진단 소견서 -> 진단서)
+        const normalized = normalizeDocumentType(result.documentType);
+        documentTypes.add(normalized);
       }
     });
     
@@ -728,7 +734,11 @@ export default function InputPage() {
                                 {DOCUMENT_TYPES.map((type) => {
                                   const isUsed = usedDocumentTypes.includes(type);
                                   // 부하테스트 결과에 없는 문서 타입은 비활성화
-                                  const isDisabledByBenchmark = availableDocumentTypes !== null && !availableDocumentTypes.has(type);
+                                  // 정규화된 문서 타입과 매칭 (진단 소견서 -> 진단서)
+                                  const isDisabledByBenchmark = availableDocumentTypes !== null && 
+                                    !Array.from(availableDocumentTypes).some(benchmarkType => 
+                                      matchDocumentType(benchmarkType, type)
+                                    );
                                   const isDisabled = isUsed || isDisabledByBenchmark || isWaitingForBenchmarkAnalysis;
                                   return (
                                     <div key={type} className="flex items-center space-x-2">
@@ -890,8 +900,12 @@ export default function InputPage() {
                   // 부하테스트 결과에 있는 문서 타입 중 첫 번째를 선택
                   let defaultDocumentType: typeof DOCUMENT_TYPES[number] = DOCUMENT_TYPES[0];
                   if (availableDocumentTypes !== null && availableDocumentTypes.size > 0) {
-                    // 사용 가능한 문서 타입 중 첫 번째 찾기
-                    const availableType = DOCUMENT_TYPES.find(type => availableDocumentTypes.has(type));
+                    // 사용 가능한 문서 타입 중 첫 번째 찾기 (정규화된 문서 타입과 매칭)
+                    const availableType = DOCUMENT_TYPES.find(type => 
+                      Array.from(availableDocumentTypes).some(benchmarkType => 
+                        matchDocumentType(benchmarkType, type)
+                      )
+                    );
                     if (availableType) {
                       defaultDocumentType = availableType;
                     }
