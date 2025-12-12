@@ -155,7 +155,7 @@ export async function parseBenchmarkResults(
 2. workloadType은 반드시 다음 5가지 중 하나여야 합니다: "OCR", "DP", "DocumentClassifier" (또는 "분류기"), "InformationExtraction" (또는 "정보추출"), "LLM"
 3. **OCR 워크로드의 documentType은 반드시 null이어야 합니다. OCR 워크로드는 문서 타입을 가지지 않습니다.**
 4. InformationExtraction 워크로드인 경우, "테스트 이름" 컬럼에서 문서 타입을 추출하여 documentType 필드에 포함하세요.
-5. **매우 중요 - migRps와 nonMigRps 구분 규칙 (절대 규칙):**
+5. ** migRps와 nonMigRps 구분 규칙 (절대 규칙):**
    - **GPU 타입에 따라 구분:**
      * **MIG 프로필이 있는 GPU (H100, H200, B100, B200)**: nonMigRps와 migRps를 모두 설정하세요.
      * **MIG 프로필이 없는 GPU (L40S, A100, A6000, RTX3090 등)**: nonMigRps만 설정하세요.
@@ -195,15 +195,11 @@ export async function parseBenchmarkResults(
        * **절대 컨테이너 1개일 때의 첫 번째 값이나 작은 값을 사용하지 마세요. 반드시 최대값을 찾아서 사용하세요.**
      * **MIG GPU인 경우, migRPS는 컨테이너 1개일 때의 RPS 값 중 최대값을 사용하세요.**
      * **MIG GPU인 경우: nonMigRps와 migRps를 모두 설정해야 합니다.**
-6. **매우 중요 - 처리량 값 우선순위 및 변환 규칙:**
-   - **처리량 값이 여러 개 있는 경우 우선순위:**
-     1. **분당 처리량 우선**: "분당페이지", "분당 처리량", "분당 X페이지", "X pages/min", "X docs/min" 같은 분당 처리량이 있으면 이것을 우선 사용하세요.
-     2. **초당 처리량**: 분당 페이지, 분당 처리량이 없을 때만 "RPS: 0.43", "0.43 req/sec" 같은 초당 처리량을 사용하세요.
+6. **매우 중요 - 처리량 값 변환 규칙:**
    - **RPS 변환 규칙:**
      * 분당 처리량을 RPS로 변환: **RPS = 분당 처리량 / 60**
      * 예시: "분당 25.8페이지" → RPS = 25.8 / 60 = 0.43 RPS
      * 예시: "30 docs/min" → RPS = 30 / 60 = 0.5 RPS
-   - **절대 분당 처리량을 그대로 RPS로 사용하지 마세요!** 분당 처리량을 RPS로 변환하지 않으면 잘못된 값이 됩니다.
 7. **매우 중요 - 모든 필드 채우기:**
    - 부하테스트 결과에서 GPU 모델, 워크로드 타입, 문서 타입을 반드시 추출하세요.
    - 값을 계산할 수 없는 경우에만 null로 설정하세요. 가능한 한 모든 값을 채우도록 노력하세요.
