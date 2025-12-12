@@ -129,6 +129,43 @@ export default function InputPage() {
   const deploymentMode = form.watch("cluster.deploymentMode");
   const throughputInputRefs = React.useRef<(HTMLInputElement | null)[]>([]);
 
+  // 부하테스트 결과에서 사용 가능한 문서 타입과 DP 워크로드 여부 추출
+  const availableDocumentTypes = React.useMemo(() => {
+    if (benchmarkAnalysisResults.length === 0) {
+      return null; // 부하테스트 결과가 없으면 모든 문서 타입 허용
+    }
+    
+    const documentTypes = new Set<string>();
+    benchmarkAnalysisResults.forEach((result: any) => {
+      // InformationExtraction 워크로드의 documentType만 추출
+      if (result.workloadType === "InformationExtraction" && result.documentType) {
+        documentTypes.add(result.documentType);
+      }
+    });
+    
+    return documentTypes.size > 0 ? documentTypes : null;
+  }, [benchmarkAnalysisResults]);
+
+  const hasDPWorkload = React.useMemo(() => {
+    if (benchmarkAnalysisResults.length === 0) {
+      return true; // 부하테스트 결과가 없으면 DP 허용
+    }
+    
+    return benchmarkAnalysisResults.some((result: any) => 
+      result.workloadType === "DP"
+    );
+  }, [benchmarkAnalysisResults]);
+
+  // 부하테스트 결과가 업로드되었지만 분석이 완료되지 않은 상태인지 확인
+  const isWaitingForBenchmarkAnalysis = React.useMemo(() => {
+    const hasBenchmarkData = benchmarkFiles.length > 0 || 
+                             benchmarkTexts.some((t) => t && t.trim()) || 
+                             usePredefinedBenchmark;
+    const isAnalysisPending = isAnalyzingBenchmark || 
+                              (hasBenchmarkData && benchmarkAnalysisResults.length === 0);
+    return hasBenchmarkData && isAnalysisPending;
+  }, [benchmarkFiles, benchmarkTexts, usePredefinedBenchmark, isAnalyzingBenchmark, benchmarkAnalysisResults]);
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     setBenchmarkFiles((prev) => [...prev, ...files]);
@@ -601,14 +638,21 @@ export default function InputPage() {
           </Card>
 
           {/* SECTION 1: OCR 요구사항 */}
-          <Card className="border-2 shadow-lg hover:shadow-xl transition-shadow">
+          <Card className={`border-2 shadow-lg hover:shadow-xl transition-shadow ${isWaitingForBenchmarkAnalysis ? "opacity-60" : ""}`}>
             <CardHeader className="bg-gradient-to-r from-green-500/5 to-green-500/10 pb-4">
-              <CardTitle className="text-xl">OCR 요구사항</CardTitle>
+              <CardTitle className="text-xl">
+                OCR 요구사항
+                {isWaitingForBenchmarkAnalysis && (
+                  <span className="text-muted-foreground text-sm font-normal ml-2">(부하테스트 결과 분석 대기 중)</span>
+                )}
+              </CardTitle>
               <CardDescription className="text-base">
-                여러 종류의 OCR 문서 워크로드를 추가할 수 있습니다.
+                {isWaitingForBenchmarkAnalysis
+                  ? "부하테스트 결과 분석이 완료될 때까지 기다려주세요."
+                  : "여러 종류의 OCR 문서 워크로드를 추가할 수 있습니다."}
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className={`space-y-4 ${isWaitingForBenchmarkAnalysis ? "pointer-events-none" : ""}`}>
               {/* 전체 요청량 */}
               <FormField
                 control={form.control}
@@ -679,22 +723,27 @@ export default function InputPage() {
                                   }, 100);
                                 }}
                                 className="flex flex-wrap gap-4"
+                                disabled={isWaitingForBenchmarkAnalysis}
                               >
                                 {DOCUMENT_TYPES.map((type) => {
                                   const isUsed = usedDocumentTypes.includes(type);
+                                  // 부하테스트 결과에 없는 문서 타입은 비활성화
+                                  const isDisabledByBenchmark = availableDocumentTypes !== null && !availableDocumentTypes.has(type);
+                                  const isDisabled = isUsed || isDisabledByBenchmark || isWaitingForBenchmarkAnalysis;
                                   return (
                                     <div key={type} className="flex items-center space-x-2">
                                       <RadioGroupItem
                                         value={type}
                                         id={`${field.name}-${type}`}
-                                        disabled={isUsed}
-                                        className={isUsed ? "opacity-50 cursor-not-allowed" : ""}
+                                        disabled={isDisabled}
+                                        className={isDisabled ? "opacity-50 cursor-not-allowed" : ""}
                                       />
                                       <Label
                                         htmlFor={`${field.name}-${type}`}
                                         className={`text-sm font-normal cursor-pointer ${
-                                          isUsed ? "opacity-50 cursor-not-allowed" : ""
+                                          isDisabled ? "opacity-50 cursor-not-allowed" : ""
                                         }`}
+                                        title={isDisabledByBenchmark ? "부하테스트 결과에 없는 문서 타입입니다" : ""}
                                       >
                                         {type}
                                       </Label>
@@ -837,14 +886,25 @@ export default function InputPage() {
               <Button
                 type="button"
                 variant="outline"
-                onClick={() =>
+                onClick={() => {
+                  // 부하테스트 결과에 있는 문서 타입 중 첫 번째를 선택
+                  let defaultDocumentType: typeof DOCUMENT_TYPES[number] = DOCUMENT_TYPES[0];
+                  if (availableDocumentTypes !== null && availableDocumentTypes.size > 0) {
+                    // 사용 가능한 문서 타입 중 첫 번째 찾기
+                    const availableType = DOCUMENT_TYPES.find(type => availableDocumentTypes.has(type));
+                    if (availableType) {
+                      defaultDocumentType = availableType;
+                    }
+                  }
+                  
                   append({
-                    documentType: DOCUMENT_TYPES[0],
+                    documentType: defaultDocumentType,
                     requiredThroughput: 100,
                     maxLatency: 5,
                     requiresPLLM: false,
-                  })
-                }
+                  });
+                }}
+                disabled={isWaitingForBenchmarkAnalysis || (availableDocumentTypes !== null && availableDocumentTypes.size === 0)}
               >
                 <Plus className="h-4 w-4 mr-2" />
                 OCR 타입 추가
@@ -853,14 +913,21 @@ export default function InputPage() {
           </Card>
 
           {/* SECTION 2: DP Workload */}
-          <Card className="border-2 shadow-lg hover:shadow-xl transition-shadow">
+          <Card className={`border-2 shadow-lg hover:shadow-xl transition-shadow ${!hasDPWorkload ? "opacity-60" : ""}`}>
             <CardHeader className="bg-gradient-to-r from-purple-500/5 to-purple-500/10 pb-4">
-              <CardTitle className="text-xl">DP 워크로드</CardTitle>
+              <CardTitle className="text-xl">
+                DP 워크로드
+                {!hasDPWorkload && benchmarkAnalysisResults.length > 0 && (
+                  <span className="text-muted-foreground text-sm font-normal ml-2">(부하테스트 결과에 없음)</span>
+                )}
+              </CardTitle>
               <CardDescription className="text-base">
-                문서 처리(DP) 워크로드 설정을 입력하세요.
+                {!hasDPWorkload && benchmarkAnalysisResults.length > 0
+                  ? "부하테스트 결과에 DP 워크로드가 없습니다."
+                  : "문서 처리(DP) 워크로드 설정을 입력하세요."}
               </CardDescription>
             </CardHeader>
-            <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <CardContent className={`grid grid-cols-1 md:grid-cols-2 gap-4 ${!hasDPWorkload ? "pointer-events-none" : ""}`}>
               <FormField
                 control={form.control}
                 name="dp.requiredThroughput"
@@ -873,6 +940,8 @@ export default function InputPage() {
                         inputMode="numeric"
                         {...field}
                         value={field.value && field.value > 0 ? String(field.value) : ""}
+                        disabled={!hasDPWorkload && benchmarkAnalysisResults.length > 0}
+                        className={!hasDPWorkload && benchmarkAnalysisResults.length > 0 ? "bg-muted cursor-not-allowed" : ""}
                         onFocus={(e) => {
                           e.target.select();
                         }}
@@ -915,7 +984,7 @@ export default function InputPage() {
                         step="0.1"
                         {...field}
                         value={field.value ?? ""}
-                        disabled
+                        disabled={true || (!hasDPWorkload && benchmarkAnalysisResults.length > 0)}
                         className="bg-muted cursor-not-allowed"
                         onChange={(e) => {
                           const value = e.target.value;
